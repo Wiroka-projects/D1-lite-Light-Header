@@ -23,7 +23,7 @@ Usage:
 4. Open browser: http://localhost:8000
 """
 
-from fastapi import FastAPI, HTTPException, Form
+from fastapi import FastAPI, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import serial
@@ -31,21 +31,48 @@ import json
 import time
 from typing import Optional
 import uvicorn
+import argparse
+import sys
+
+# ================================
+# COMMAND LINE ARGUMENTS
+# ================================
+parser = argparse.ArgumentParser(description='LED Controller API Tester')
+parser.add_argument('--port', type=str, help='Serial port for Arduino (e.g., COM10, /dev/ttyUSB0)')
+args = parser.parse_args()
 
 # ================================
 # CONFIGURATION
 # ================================
-SERIAL_PORT = "COM3"  # Change this to your Arduino's COM port
+SERIAL_PORT = args.port  # From command line argument
 BAUD_RATE = 115200
 TIMEOUT = 2  # Serial timeout in seconds
 
 # ================================
 # SERIAL CONNECTION
 # ================================
+def get_serial_port():
+    """Get serial port from argument or prompt user"""
+    port = SERIAL_PORT
+    if not port:
+        print("Available serial ports:")
+        import serial.tools.list_ports
+        ports = serial.tools.list_ports.comports()
+        for p in ports:
+            print(f"  {p.device}: {p.description}")
+        
+        port = input("Enter Arduino serial port: ").strip()
+        if not port:
+            print("No port specified. Exiting.")
+            sys.exit(1)
+    return port
+
+arduino = None
 try:
-    arduino = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=TIMEOUT)
+    port = get_serial_port()
+    arduino = serial.Serial(port, BAUD_RATE, timeout=TIMEOUT)
     time.sleep(2)  # Wait for Arduino to initialize
-    print(f"✅ Connected to Arduino on {SERIAL_PORT}")
+    print(f"✅ Connected to Arduino on {port}")
 except Exception as e:
     print(f"❌ Failed to connect to Arduino: {e}")
     arduino = None
@@ -156,7 +183,7 @@ async def main_page():
                     <h2>🌈 RGB Strip Control</h2>
                     
                     <h3>Single Pixel</h3>
-                    <form onsubmit="return testRgbSingle(event)">
+                    <form onsubmit="testRgbSingle(event); return false;">
                         <div class="form-group">
                             <label>Strip:</label>
                             <select id="rgb_single_strip">
@@ -165,8 +192,8 @@ async def main_page():
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Pixel (0-77):</label>
-                            <input type="number" id="rgb_single_pixel" min="0" max="77" value="0">
+                            <label>Pixel (0-500):</label>
+                            <input type="number" id="rgb_single_pixel" min="0" max="500" value="0">
                         </div>
                         <div class="form-group">
                             <div class="inline">
@@ -181,12 +208,16 @@ async def main_page():
                                 <label>B:</label>
                                 <input type="number" id="rgb_single_b" min="0" max="255" value="0" class="color-input">
                             </div>
+                            <div class="inline">
+                                <label>Bright:</label>
+                                <input type="number" id="rgb_single_brightness" min="0" max="255" value="255" class="color-input">
+                            </div>
                         </div>
                         <button type="submit">Set Single Pixel</button>
                     </form>
 
                     <h3>Pixel Range</h3>
-                    <form onsubmit="return testRgbRange(event)">
+                    <form onsubmit="testRgbRange(event); return false;">
                         <div class="form-group">
                             <label>Strip:</label>
                             <select id="rgb_range_strip">
@@ -197,11 +228,11 @@ async def main_page():
                         <div class="form-group">
                             <div class="inline">
                                 <label>Start:</label>
-                                <input type="number" id="rgb_range_start" min="0" max="77" value="0">
+                                <input type="number" id="rgb_range_start" min="0" max="500" value="0">
                             </div>
                             <div class="inline">
                                 <label>End:</label>
-                                <input type="number" id="rgb_range_end" min="0" max="77" value="9">
+                                <input type="number" id="rgb_range_end" min="0" max="500" value="9">
                             </div>
                         </div>
                         <div class="form-group">
@@ -217,12 +248,16 @@ async def main_page():
                                 <label>B:</label>
                                 <input type="number" id="rgb_range_b" min="0" max="255" value="0" class="color-input">
                             </div>
+                            <div class="inline">
+                                <label>Bright:</label>
+                                <input type="number" id="rgb_range_brightness" min="0" max="255" value="255" class="color-input">
+                            </div>
                         </div>
                         <button type="submit">Set Range</button>
                     </form>
 
                     <h3>All Pixels / Clear</h3>
-                    <form onsubmit="return testRgbAll(event)">
+                    <form onsubmit="testRgbAll(event); return false;">
                         <div class="form-group">
                             <label>Strip:</label>
                             <select id="rgb_all_strip">
@@ -243,6 +278,10 @@ async def main_page():
                                 <label>B:</label>
                                 <input type="number" id="rgb_all_b" min="0" max="255" value="255" class="color-input">
                             </div>
+                            <div class="inline">
+                                <label>Bright:</label>
+                                <input type="number" id="rgb_all_brightness" min="0" max="255" value="255" class="color-input">
+                            </div>
                         </div>
                         <button type="submit">Set All Pixels</button>
                         <button type="button" onclick="clearStrip()">Clear Strip</button>
@@ -260,12 +299,12 @@ async def main_page():
                     <button onclick="testLedDigital(false)">LED OFF</button>
 
                     <h3>Analog Control</h3>
-                    <form onsubmit="return testLedAnalog(event)">
+                    <form onsubmit="testLedAnalog(event); return false;">
                         <div class="form-group">
                             <label>Brightness (0-255):</label>
-                            <input type="range" id="led_brightness" min="0" max="255" value="128" 
-                                   oninput="document.getElementById('brightness_value').textContent = this.value">
-                            <span id="brightness_value">128</span>
+                        <input type="range" id="led_brightness" min="0" max="255" value="128" 
+                               oninput="document.getElementById('led_brightness_display').textContent = this.value">
+                        <span id="led_brightness_display">128</span>
                         </div>
                         <button type="submit">Set Brightness</button>
                     </form>
@@ -312,13 +351,64 @@ async def main_page():
             <div class="section">
                 <h2>⚙️ Configuration</h2>
                 
-                <h3>LB Sensor Threshold</h3>
-                <form onsubmit="return setThreshold(event)">
+                <h3>RGB Strip Brightness</h3>
+                <form onsubmit="setRgbBrightness(event); return false;">
                     <div class="form-group">
-                        <label>Threshold (0-1023):</label>
-                        <input type="number" id="threshold_value" min="0" max="1023" value="512">
+                        <label>Strip:</label>
+                        <select id="brightness_strip">
+                            <option value="1">1 (Ring-Top)</option>
+                            <option value="2">2 (Door)</option>
+                        </select>
                     </div>
-                    <button type="submit">Set Threshold</button>
+                    <div class="form-group">
+                        <label>Brightness (0-255):</label>
+                        <input type="range" id="brightness_value" min="0" max="255" value="255" 
+                               oninput="document.getElementById('brightness_display').textContent = this.value">
+                        <span id="brightness_display">255</span>
+                    </div>
+                    <button type="submit">Set Brightness</button>
+                </form>
+
+                <h3>RGB Strip Pixel Counts</h3>
+                <form onsubmit="setRgbPixels(event); return false;">
+                    <div class="form-group">
+                        <label>Strip:</label>
+                        <select id="pixels_strip">
+                            <option value="1">1 (Ring-Top)</option>
+                            <option value="2">2 (Door)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Pixels (1-1000):</label>
+                        <input type="number" id="pixels_value" min="1" max="1000" value="150">
+                    </div>
+                    <button type="submit">Set Pixel Count</button>
+                </form>
+
+                <h3>RGB Strip Default Colors</h3>
+                <form onsubmit="setRgbDefaultColor(event); return false;">
+                    <div class="form-group">
+                        <label>Strip:</label>
+                        <select id="default_strip">
+                            <option value="1">1 (Ring-Top)</option>
+                            <option value="2">2 (Door)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <div class="inline">
+                            <label>R:</label>
+                            <input type="number" id="default_r" min="0" max="255" value="255" class="color-input">
+                        </div>
+                        <div class="inline">
+                            <label>G:</label>
+                            <input type="number" id="default_g" min="0" max="255" value="255" class="color-input">
+                        </div>
+                        <div class="inline">
+                            <label>B:</label>
+                            <input type="number" id="default_b" min="0" max="255" value="255" class="color-input">
+                        </div>
+                    </div>
+                    <button type="submit">Set Default Color</button>
                 </form>
 
                 <div id="config_response" class="response"></div>
@@ -364,7 +454,8 @@ async def main_page():
                     pixel: parseInt(document.getElementById('rgb_single_pixel').value),
                     r: parseInt(document.getElementById('rgb_single_r').value),
                     g: parseInt(document.getElementById('rgb_single_g').value),
-                    b: parseInt(document.getElementById('rgb_single_b').value)
+                    b: parseInt(document.getElementById('rgb_single_b').value),
+                    brightness: parseInt(document.getElementById('rgb_single_brightness').value)
                 };
                 const response = await callAPI('/test/rgb', data);
                 displayResponse('rgb_response', response);
@@ -381,7 +472,8 @@ async def main_page():
                     end: parseInt(document.getElementById('rgb_range_end').value),
                     r: parseInt(document.getElementById('rgb_range_r').value),
                     g: parseInt(document.getElementById('rgb_range_g').value),
-                    b: parseInt(document.getElementById('rgb_range_b').value)
+                    b: parseInt(document.getElementById('rgb_range_b').value),
+                    brightness: parseInt(document.getElementById('rgb_range_brightness').value)
                 };
                 const response = await callAPI('/test/rgb', data);
                 displayResponse('rgb_response', response);
@@ -396,7 +488,8 @@ async def main_page():
                     mode: 'all',
                     r: parseInt(document.getElementById('rgb_all_r').value),
                     g: parseInt(document.getElementById('rgb_all_g').value),
-                    b: parseInt(document.getElementById('rgb_all_b').value)
+                    b: parseInt(document.getElementById('rgb_all_b').value),
+                    brightness: parseInt(document.getElementById('rgb_all_brightness').value)
                 };
                 const response = await callAPI('/test/rgb', data);
                 displayResponse('rgb_response', response);
@@ -473,7 +566,34 @@ async def main_page():
                 return false;
             }
 
-            // Help Function
+            async function setRgbPixels(event) {
+                event.preventDefault();
+                const strip = parseInt(document.getElementById('pixels_strip').value);
+                const pixels = parseInt(document.getElementById('pixels_value').value);
+                const response = await callAPI('/test/config/pixels', { strip, pixels });
+                displayResponse('config_response', response);
+                return false;
+            }
+
+            async function setRgbBrightness(event) {
+                event.preventDefault();
+                const strip = parseInt(document.getElementById('brightness_strip').value);
+                const brightness = parseInt(document.getElementById('brightness_value').value);
+                const response = await callAPI('/test/config/brightness', { strip, brightness });
+                displayResponse('config_response', response);
+                return false;
+            }
+
+            async function setRgbDefaultColor(event) {
+                event.preventDefault();
+                const strip = parseInt(document.getElementById('default_strip').value);
+                const r = parseInt(document.getElementById('default_r').value);
+                const g = parseInt(document.getElementById('default_g').value);
+                const b = parseInt(document.getElementById('default_b').value);
+                const response = await callAPI('/test/config/default_color', { strip, r, g, b });
+                displayResponse('config_response', response);
+                return false;
+            }
             async function showHelp() {
                 const response = await callAPI('/help');
                 document.getElementById('help_content').textContent = response.help || response.message;
@@ -523,6 +643,59 @@ async def test_config(command: dict):
     response = send_command(command_str)
     return response
 
+@app.post("/test/config/pixels")
+async def test_config_pixels(request: Request):
+    """Set pixel count for RGB strip"""
+    data = await request.json()
+    strip = data.get("strip")
+    pixels = data.get("pixels")
+    if strip is None or pixels is None:
+        return {"status": "error", "message": "Missing strip or pixels parameter"}
+    data_cmd = {
+        "action": "config",
+        "setting": f"rgb{strip}_pixels",
+        "value": pixels
+    }
+    response = send_command(json.dumps(data_cmd))
+    return response
+
+@app.post("/test/config/brightness")
+async def test_config_brightness(request: Request):
+    """Set brightness for RGB strip"""
+    data = await request.json()
+    strip = data.get("strip")
+    brightness = data.get("brightness")
+    print(f"Setting brightness for RGB strip {strip}: {brightness}; {data}")
+    if strip is None or brightness is None:
+        return {"status": "error", "message": "Missing strip or brightness parameter"}
+    data_cmd = {
+        "action": "config",
+        "setting": f"rgb{strip}_brightness",
+        "value": brightness
+    }
+    response = send_command(json.dumps(data_cmd))
+    return response
+
+@app.post("/test/config/default_color")
+async def test_config_default_color(request: Request):
+    """Set default color for RGB strip"""
+    data = await request.json()
+    strip = data.get("strip")
+    r = data.get("r")
+    g = data.get("g")
+    b = data.get("b")
+    if strip is None or r is None or g is None or b is None:
+        return {"status": "error", "message": "Missing strip, r, g, or b parameter"}
+    data_cmd = {
+        "action": "config",
+        "setting": f"rgb{strip}_default_color",
+        "r": r,
+        "g": g,
+        "b": b
+    }
+    response = send_command(json.dumps(data_cmd))
+    return response
+
 @app.post("/help")
 async def get_arduino_help():
     """Get help documentation from Arduino"""
@@ -537,7 +710,7 @@ async def get_arduino_help():
 async def get_status():
     """Get connection status"""
     if arduino and arduino.is_open:
-        return {"status": "connected", "port": SERIAL_PORT, "baud_rate": BAUD_RATE}
+        return {"status": "connected", "port": arduino.port, "baud_rate": BAUD_RATE}
     else:
         return {"status": "disconnected", "message": "Arduino not connected"}
 
@@ -548,13 +721,13 @@ async def get_info():
         "title": "LED Controller API Tester",
         "version": "1.0.0",
         "description": "Web interface for testing Arduino LED Controller API",
-        "arduino_port": SERIAL_PORT,
+        "arduino_port": arduino.port if arduino else "Not connected",
         "features": [
             "RGB Strip Control (single pixel, range, all pixels, clear)",
             "Single LED Control (digital/analog)",
             "Relay Control (2 relays)",
             "Sensor Reading (LB analog/digital, RS digital, LM75 temperature)",
-            "Configuration (threshold setting)",
+            "Configuration (threshold, pixel counts, default colors, brightness)",
             "Complete API testing"
         ]
     }
@@ -565,7 +738,10 @@ async def get_info():
 
 if __name__ == "__main__":
     print("🚀 Starting LED Controller API Tester...")
-    print(f"📡 Arduino Port: {SERIAL_PORT}")
+    if arduino:
+        print(f"📡 Arduino Port: {arduino.port}")
+    else:
+        print("📡 Arduino not connected")
     print(f"🌐 Web Interface: http://localhost:8000")
     print("📖 API Documentation: http://localhost:8000/docs")
     

@@ -411,6 +411,17 @@ async def main_page():
                     <button type="submit">Set Default Color</button>
                 </form>
 
+                <h3>LED Default Brightness</h3>
+                <form onsubmit="setLedDefault(event); return false;">
+                    <div class="form-group">
+                        <label>Default Brightness (0-255):</label>
+                        <input type="range" id="led_default_value" min="0" max="255" value="0" 
+                               oninput="document.getElementById('led_default_display').textContent = this.value">
+                        <span id="led_default_display">0</span>
+                    </div>
+                    <button type="submit">Set LED Default</button>
+                </form>
+
                 <div id="config_response" class="response"></div>
             </div>
 
@@ -594,6 +605,15 @@ async def main_page():
                 displayResponse('config_response', response);
                 return false;
             }
+
+            async function setLedDefault(event) {
+                event.preventDefault();
+                const brightness = parseInt(document.getElementById('led_default_value').value);
+                const response = await callAPI('/test/config/led_default', { brightness });
+                displayResponse('config_response', response);
+                return false;
+            }
+
             async function showHelp() {
                 const response = await callAPI('/help');
                 document.getElementById('help_content').textContent = response.help || response.message;
@@ -692,6 +712,21 @@ async def test_config_default_color(request: Request):
         "r": r,
         "g": g,
         "b": b
+    }
+    response = send_command(json.dumps(data_cmd))
+    return response
+
+@app.post("/test/config/led_default")
+async def test_config_led_default(request: Request):
+    """Set LED default brightness"""
+    data = await request.json()
+    brightness = data.get("brightness")
+    if brightness is None:
+        return {"status": "error", "message": "Missing brightness parameter"}
+    data_cmd = {
+        "action": "config",
+        "setting": "led_default",
+        "value": brightness
     }
     response = send_command(json.dumps(data_cmd))
     return response

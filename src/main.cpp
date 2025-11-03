@@ -33,6 +33,7 @@ const int EEPROM_DEFAULT_B2 = 11;   // 1 byte: default blue for strip 2
 const int EEPROM_LB_THRESHOLD = 12; // 2 bytes: LB sensor threshold
 const int EEPROM_BRIGHTNESS_RGB1 = 14; // 1 byte: brightness for strip 1 (0-255)
 const int EEPROM_BRIGHTNESS_RGB2 = 15; // 1 byte: brightness for strip 2 (0-255)
+const int EEPROM_LED_DEFAULT = 16; // 1 byte: default LED brightness (0-255)
 
 const uint16_t EEPROM_MAGIC_VALUE = 0xABCD; // Magic number to verify EEPROM data
 
@@ -60,6 +61,7 @@ int defaultG2 = 120;    // Default green for strip 2
 int defaultB2 = 40;    // Default blue for strip 2
 int brightnessRgb1 = 131; // Brightness for strip 1 (0-255)
 int brightnessRgb2 = 131; // Brightness for strip 2 (0-255)
+int ledDefaultBrightness = 0; // Default LED brightness (0-255, 0=off)
 
 // ================================
 // NEOPIXEL OBJECTS (INITIALIZED IN SETUP)
@@ -613,11 +615,26 @@ void handleConfigCommand(JsonDocument& doc) {
       sendError("Invalid brightness value. Range: 0-255");
     }
     
+  } else if (setting == "led_default") {
+    // ================================
+    // SET DEFAULT LED BRIGHTNESS
+    // ================================
+    int brightness = doc["value"] | ledDefaultBrightness;
+    
+    if (brightness >= 0 && brightness <= 255) {
+      ledDefaultBrightness = brightness;
+      saveEepromSettings();
+      analogWrite(ledPin, ledDefaultBrightness); // Apply immediately
+      sendSuccess("LED default brightness set to " + String(ledDefaultBrightness));
+    } else {
+      sendError("Invalid brightness value. Range: 0-255");
+    }
+    
   } else {
     // ================================
     // INVALID CONFIGURATION SETTING
     // ================================
-    sendError("Invalid setting. Available: lb_threshold, rgb1_pixels, rgb2_pixels, rgb1_default_color, rgb2_default_color, rgb1_brightness, rgb2_brightness, brightness");
+    sendError("Invalid setting. Available: lb_threshold, rgb1_pixels, rgb2_pixels, rgb1_default_color, rgb2_default_color, rgb1_brightness, rgb2_brightness, brightness, led_default");
   }
 }
 void sendSuccess(String message) {
@@ -701,6 +718,7 @@ void showHelp() {
   Serial.println("   Set RGB2 default:  {\"action\":\"config\",\"setting\":\"rgb2_default_color\",\"r\":255,\"g\":255,\"b\":255}");
   Serial.println("   Set RGB1 bright:   {\"action\":\"config\",\"setting\":\"rgb1_brightness\",\"value\":128}");
   Serial.println("   Set RGB2 bright:   {\"action\":\"config\",\"setting\":\"rgb2_brightness\",\"value\":200}");
+  Serial.println("   Set LED default:   {\"action\":\"config\",\"setting\":\"led_default\",\"value\":128}");
   Serial.println();
   
   // ================================
@@ -717,6 +735,7 @@ void showHelp() {
   Serial.println("- rgbX_pixels: 1-1000 (number of LEDs in strip, requires restart)");
   Serial.println("- rgbX_default_color: RGB values for startup color");
   Serial.println("- rgbX_brightness: 0-255 (global brightness multiplier for strip)");
+  Serial.println("- led_default: 0-255 (default LED brightness at startup)");
   Serial.println();
   
   // ================================
@@ -788,7 +807,7 @@ void setup()
   // ================================
   digitalWrite(relay1, LOW);  // Turn relay 1 OFF (default state)
   digitalWrite(relay2, LOW);  // Turn relay 2 OFF (default state)
-  digitalWrite(ledPin, LOW);  // Turn single LED OFF (default state)
+  analogWrite(ledPin, ledDefaultBrightness);  // Set LED to default brightness
   
   // ================================
   // SERIAL BUFFER SETUP
@@ -877,6 +896,7 @@ void loadEepromSettings() {
   lbThreshold = (EEPROM.read(EEPROM_LB_THRESHOLD) << 8) | EEPROM.read(EEPROM_LB_THRESHOLD + 1);
   brightnessRgb1 = EEPROM.read(EEPROM_BRIGHTNESS_RGB1);
   brightnessRgb2 = EEPROM.read(EEPROM_BRIGHTNESS_RGB2);
+  ledDefaultBrightness = EEPROM.read(EEPROM_LED_DEFAULT);
   
   // Validate loaded values
   if (numLedsRgb1 < 1 || numLedsRgb1 > 1000) numLedsRgb1 = 150;
@@ -890,6 +910,7 @@ void loadEepromSettings() {
   if (lbThreshold < 0 || lbThreshold > 1023) lbThreshold = 512;
   if (brightnessRgb1 < 0 || brightnessRgb1 > 255) brightnessRgb1 = 255;
   if (brightnessRgb2 < 0 || brightnessRgb2 > 255) brightnessRgb2 = 255;
+  if (ledDefaultBrightness < 0 || ledDefaultBrightness > 255) ledDefaultBrightness = 0;
 }
 
 void saveEepromSettings() {
@@ -915,6 +936,8 @@ void saveEepromSettings() {
   
   EEPROM.write(EEPROM_BRIGHTNESS_RGB1, brightnessRgb1);
   EEPROM.write(EEPROM_BRIGHTNESS_RGB2, brightnessRgb2);
+  
+  EEPROM.write(EEPROM_LED_DEFAULT, ledDefaultBrightness);
   
   EEPROM.commit(); // Save changes
 }

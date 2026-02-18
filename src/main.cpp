@@ -61,7 +61,7 @@ int defaultG2 = 120;    // Default green for strip 2
 int defaultB2 = 40;    // Default blue for strip 2
 int brightnessRgb1 = 131; // Brightness for strip 1 (0-255)
 int brightnessRgb2 = 131; // Brightness for strip 2 (0-255)
-int ledDefaultBrightness = 0; // Default LED brightness (0-255, 0=off)
+int ledDefaultBrightness = 110; // Default LED brightness (0-255, 0=off)
 
 // ================================
 // NEOPIXEL OBJECTS (INITIALIZED IN SETUP)
@@ -77,6 +77,10 @@ Adafruit_NeoPixel* rgb2;
 int lbThreshold = 512;    // Threshold for LB sensor digital mode (0-1023 range)
 String inputBuffer = "";  // Buffer to store incoming serial characters
 bool inputComplete = false;  // Flag to indicate when a complete command is received
+
+// PWM State Tracking (for NeoPixel timing conflict fix)
+volatile int lastPwmValue = 0;  // Stores the current PWM value on ledPin
+volatile bool pwmActive = false; // Tracks if PWM is currently active on ledPin
 
 // ================================
 // LM75 TEMPERATURE SENSOR (OPTIONAL)
@@ -113,6 +117,8 @@ float readLm75Temperature();
 bool lm75Available();
 void loadEepromSettings();
 void saveEepromSettings();
+void pausePwmForNeoPixel();  // Disable PWM before NeoPixel operations
+void resumePwm();             // Restore PWM after NeoPixel operations
 // Note: brightness is handled by Adafruit_NeoPixel::setBrightness().
 // Global brightness is set at startup, per-command brightness temporarily overrides it.
 
@@ -218,7 +224,9 @@ void handleRgbCommand(JsonDocument& doc) {
         currentStrip->setBrightness(brightness);
       }
       currentStrip->setPixelColor(pixel, currentStrip->Color(r, g, b));
-      currentStrip->show();  // Update the physical LEDs
+      pausePwmForNeoPixel();  // Disable PWM to prevent timing conflicts
+      currentStrip->show();   // Update the physical LEDs
+      resumePwm();            // Restore PWM
       if (brightness != storedBrightness) {
         currentStrip->setBrightness(storedBrightness);
       }
@@ -250,7 +258,9 @@ void handleRgbCommand(JsonDocument& doc) {
       for (int i = start; i <= end; i++) {
         currentStrip->setPixelColor(i, currentStrip->Color(r, g, b));
       }
-      currentStrip->show();  // Update the physical LEDs
+      pausePwmForNeoPixel();  // Disable PWM to prevent timing conflicts
+      currentStrip->show();   // Update the physical LEDs
+      resumePwm();            // Restore PWM
       if (brightness != storedBrightness) {
         currentStrip->setBrightness(storedBrightness);
       }
@@ -278,7 +288,9 @@ void handleRgbCommand(JsonDocument& doc) {
     for (int i = 0; i < currentStrip->numPixels(); i++) {
       currentStrip->setPixelColor(i, currentStrip->Color(r, g, b));
     }
-    currentStrip->show();  // Update the physical LEDs
+    pausePwmForNeoPixel();  // Disable PWM to prevent timing conflicts
+    currentStrip->show();   // Update the physical LEDs
+    resumePwm();            // Restore PWM
     if (brightness != storedBrightness) {
       currentStrip->setBrightness(storedBrightness);
     }
@@ -290,7 +302,9 @@ void handleRgbCommand(JsonDocument& doc) {
     // CLEAR STRIP (TURN OFF ALL LEDS)
     // ================================
     currentStrip->clear();  // Set all pixels to black (off)
+    pausePwmForNeoPixel();  // Disable PWM to prevent timing conflicts
     currentStrip->show();   // Update the physical LEDs
+    resumePwm();            // Restore PWM
     delay(10);  // Ensure clear operation completes
     sendSuccess("Strip " + String(strip) + " cleared");
     
@@ -319,6 +333,7 @@ void handleLedCommand(JsonDocument& doc) {
     // ================================
     bool state = doc["state"] | false;  // Extract state (true=ON, false=OFF)
     digitalWrite(ledPin, state ? HIGH : LOW);  // Set LED state
+    pwmActive = false;  // PWM is no longer active in digital mode
     sendSuccess("LED set to " + String(state ? "ON" : "OFF"));
     
   } else if (mode == "analog") {
@@ -330,6 +345,8 @@ void handleLedCommand(JsonDocument& doc) {
     // Validate brightness value range
     if (value >= 0 && value <= 255) {
       analogWrite(ledPin, value);  // Set PWM brightness (0=off, 255=full brightness)
+      lastPwmValue = value;  // Track current PWM value
+      pwmActive = (value > 0);  // PWM is active if value > 0
       sendSuccess("LED analog value set to " + String(value));
     } else {
       sendError("Invalid analog value. Range: 0-255");
@@ -791,7 +808,9 @@ void setup()
   for (int i = 0; i < rgb1->numPixels(); i++) {
     rgb1->setPixelColor(i, rgb1->Color(defaultR1, defaultG1, defaultB1));  // Set all pixels to default color
   }
-  rgb1->show();    // Apply the changes
+  pausePwmForNeoPixel();  // Disable PWM to prevent timing conflicts
+  rgb1->show();   // Apply the changes
+  resumePwm();    // Restore PWM
   
   // Initialize RGB strip #2 (Door) with loaded pixel count
   rgb2 = new Adafruit_NeoPixel(numLedsRgb2, RGB2, NEO_GRB + NEO_KHZ800);
@@ -800,14 +819,18 @@ void setup()
   for (int i = 0; i < rgb2->numPixels(); i++) {
     rgb2->setPixelColor(i, rgb2->Color(defaultR2, defaultG2, defaultB2));  // Set all pixels to default color
   }
-  rgb2->show();    // Apply the changes
+  pausePwmForNeoPixel();  // Disable PWM to prevent timing conflicts
+  rgb2->show();   // Apply the changes
+  resumePwm();    // Restore PWM
   
   // ================================
   // SET DEFAULT HARDWARE STATES
   // ================================
-  digitalWrite(relay1, LOW);  // Turn relay 1 OFF (default state)
-  digitalWrite(relay2, LOW);  // Turn relay 2 OFF (default state)
+  digitalWrite(relay1, HIGH);  // Turn relay 1 OFF (HIGH default state)
+  digitalWrite(relay2, HIGH);  // Turn relay 2 OFF (HIGH default state)
   analogWrite(ledPin, ledDefaultBrightness);  // Set LED to default brightness
+  lastPwmValue = ledDefaultBrightness;  // Track initial PWM value
+  pwmActive = (ledDefaultBrightness > 0);  // PWM is active if default brightness > 0
   
   // ================================
   // SERIAL BUFFER SETUP
@@ -965,4 +988,36 @@ float readLm75Temperature() {
 bool lm75Available() {
   Wire.beginTransmission(LM75_ADDR);
   return (Wire.endTransmission() == 0);
+}
+
+// ================================
+// PWM / NEOPIXEL TIMING FIX FUNCTIONS
+// ================================
+/**
+ * PAUSE PWM FOR NEOPIXEL COMMUNICATION
+ * Temporarily disables PWM on ledPin to prevent timing conflicts
+ * with NeoPixel bitbanging communication.
+ * The PWM value is saved and can be restored with resumePwm().
+ * 
+ * This fixes the issue where analogWrite() on D5 interferes with
+ * NeoPixel operations on D1/D2 due to timing conflicts on the ESP8266.
+ */
+void pausePwmForNeoPixel() {
+  if (pwmActive) {
+    // Save current PWM value and disable it
+    analogWrite(ledPin, 0);  // Turn off PWM (write 0)
+    delayMicroseconds(100);  // Brief delay for PWM to settle
+  }
+}
+
+/**
+ * RESUME PWM AFTER NEOPIXEL COMMUNICATION
+ * Restores PWM on ledPin to the previously saved value.
+ * Call this after NeoPixel show() operations complete.
+ */
+void resumePwm() {
+  if (pwmActive && lastPwmValue > 0) {
+    delayMicroseconds(100);  // Brief delay before resuming PWM
+    analogWrite(ledPin, lastPwmValue);  // Restore previous PWM value
+  }
 }

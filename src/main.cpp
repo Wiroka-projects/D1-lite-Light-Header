@@ -1,5 +1,5 @@
 /*
- * LED Controller API v1.0
+ * LED Controller API v1.1
  * 
  * 
  * This program provides a comprehensive JSON-based API for controlling:
@@ -51,8 +51,8 @@ const int LB = A0;        // Analog input from Paper Full Sensor (0-1023)
 // ================================
 // LED STRIP CONFIGURATION (LOADED FROM EEPROM)
 // ================================
-int numLedsRgb1 = 230;  // Number of LEDs in strip #1 (loaded from EEPROM)
-int numLedsRgb2 = 230;  // Number of LEDs in strip #2 (loaded from EEPROM)
+int numLedsRgb1 = 300;  // Number of LEDs in strip #1 (loaded from EEPROM)
+int numLedsRgb2 = 300;  // Number of LEDs in strip #2 (loaded from EEPROM)
 int defaultR1 = 255;    // Default red for strip 1
 int defaultG1 = 120;    // Default green for strip 1
 int defaultB1 = 40;    // Default blue for strip 1
@@ -115,6 +115,7 @@ void sendError(String message);
 void showHelp();
 float readLm75Temperature();
 bool lm75Available();
+void handleStatusCommand();
 void loadEepromSettings();
 void saveEepromSettings();
 void pausePwmForNeoPixel();  // Disable PWM before NeoPixel operations
@@ -171,6 +172,8 @@ void processCommand(String command) {
     handleReadCommand(doc);     // Handle sensor reading commands
   } else if (action == "config") {
     handleConfigCommand(doc);   // Handle configuration commands
+  } else if (action == "status") {
+    handleStatusCommand();      // Handle status query
   } else {
     sendError("Unknown action: " + action);  // Unknown command
   }
@@ -533,8 +536,14 @@ void handleConfigCommand(JsonDocument& doc) {
     
     if (pixels >= 1 && pixels <= 1000) {
       numLedsRgb1 = pixels;
+      rgb1->updateLength(numLedsRgb1);
+      rgb1->setBrightness(brightnessRgb1);
+      rgb1->clear();
+      pausePwmForNeoPixel();
+      rgb1->show();
+      resumePwm();
       saveEepromSettings();
-      sendSuccess("RGB1 pixels set to " + String(numLedsRgb1) + " (restart required)");
+      sendSuccess("RGB1 pixels set to " + String(numLedsRgb1));
     } else {
       sendError("Invalid pixel count. Range: 1-1000");
     }
@@ -547,8 +556,14 @@ void handleConfigCommand(JsonDocument& doc) {
     
     if (pixels >= 1 && pixels <= 1000) {
       numLedsRgb2 = pixels;
+      rgb2->updateLength(numLedsRgb2);
+      rgb2->setBrightness(brightnessRgb2);
+      rgb2->clear();
+      pausePwmForNeoPixel();
+      rgb2->show();
+      resumePwm();
       saveEepromSettings();
-      sendSuccess("RGB2 pixels set to " + String(numLedsRgb2) + " (restart required)");
+      sendSuccess("RGB2 pixels set to " + String(numLedsRgb2));
     } else {
       sendError("Invalid pixel count. Range: 1-1000");
     }
@@ -654,6 +669,35 @@ void handleConfigCommand(JsonDocument& doc) {
     sendError("Invalid setting. Available: lb_threshold, rgb1_pixels, rgb2_pixels, rgb1_default_color, rgb2_default_color, rgb1_brightness, rgb2_brightness, brightness, led_default");
   }
 }
+
+/**
+ * STATUS COMMAND HANDLER
+ * Returns all current configuration values as JSON
+ * Useful for debugging EEPROM persistence and verifying settings
+ */
+void handleStatusCommand() {
+  JsonDocument response;
+  response["status"] = "success";
+  response["rgb1_pixels"] = numLedsRgb1;
+  response["rgb2_pixels"] = numLedsRgb2;
+  response["rgb1_actual_pixels"] = (int)rgb1->numPixels();
+  response["rgb2_actual_pixels"] = (int)rgb2->numPixels();
+  response["rgb1_brightness"] = brightnessRgb1;
+  response["rgb2_brightness"] = brightnessRgb2;
+  response["rgb1_default_r"] = defaultR1;
+  response["rgb1_default_g"] = defaultG1;
+  response["rgb1_default_b"] = defaultB1;
+  response["rgb2_default_r"] = defaultR2;
+  response["rgb2_default_g"] = defaultG2;
+  response["rgb2_default_b"] = defaultB2;
+  response["lb_threshold"] = lbThreshold;
+  response["led_default"] = ledDefaultBrightness;
+  response["pwm_active"] = pwmActive;
+  response["pwm_value"] = lastPwmValue;
+  serializeJson(response, Serial);
+  Serial.println();
+}
+
 void sendSuccess(String message) {
   JsonDocument response;
   response["status"] = "success";
@@ -729,8 +773,8 @@ void showHelp() {
   // ================================
   Serial.println("5. CONFIGURATION:");
   Serial.println("   Set threshold:     {\"action\":\"config\",\"setting\":\"lb_threshold\",\"value\":600}");
-  Serial.println("   Set RGB1 pixels:   {\"action\":\"config\",\"setting\":\"rgb1_pixels\",\"value\":100}");
-  Serial.println("   Set RGB2 pixels:   {\"action\":\"config\",\"setting\":\"rgb2_pixels\",\"value\":100}");
+  Serial.println("   Set RGB1 pixels:   {\"action\":\"config\",\"setting\":\"rgb1_pixels\",\"value\":100}  (applies immediately)");
+  Serial.println("   Set RGB2 pixels:   {\"action\":\"config\",\"setting\":\"rgb2_pixels\",\"value\":100}  (applies immediately)");
   Serial.println("   Set RGB1 default:  {\"action\":\"config\",\"setting\":\"rgb1_default_color\",\"r\":255,\"g\":255,\"b\":255}");
   Serial.println("   Set RGB2 default:  {\"action\":\"config\",\"setting\":\"rgb2_default_color\",\"r\":255,\"g\":255,\"b\":255}");
   Serial.println("   Set RGB1 bright:   {\"action\":\"config\",\"setting\":\"rgb1_brightness\",\"value\":128}");
@@ -758,6 +802,9 @@ void showHelp() {
   // ================================
   // RESPONSE FORMAT INFO
   // ================================
+  Serial.println("6. STATUS:");
+  Serial.println("   Get config:   {\"action\":\"status\"}");
+  Serial.println();
   Serial.println("All responses are in JSON format with 'status' field.");
   Serial.println("Ready for commands...");
   Serial.println();
@@ -784,6 +831,9 @@ void setup()
   Serial.println();      // Print empty line for clarity
   Serial.println("=== LED Controller API v1.0 ===");
   Serial.println("Type 'help' for available commands");
+  Serial.println("Config: RGB1=" + String(numLedsRgb1) + "px, RGB2=" + String(numLedsRgb2) + "px");
+  Serial.println("Colors: RGB1=(" + String(defaultR1) + "," + String(defaultG1) + "," + String(defaultB1) + ") RGB2=(" + String(defaultR2) + "," + String(defaultG2) + "," + String(defaultB2) + ")");
+  Serial.println("Brightness: RGB1=" + String(brightnessRgb1) + " RGB2=" + String(brightnessRgb2) + " LED=" + String(ledDefaultBrightness));
   Serial.println("Ready for JSON commands...");
   
   // ================================

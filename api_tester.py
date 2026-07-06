@@ -7,10 +7,11 @@ of the LED Controller API running on an Arduino/ESP8266.
 
 Features:
 - Test all RGB strip operations (single pixel, range, all, clear)
+- Test RGB animations (running, charging, center fill, rainbow, flash, random)
 - Control single LED (digital/analog)
 - Control relays
 - Read sensors (LB analog/digital, RS digital, Temperature LM75)
-- Configure system settings
+- Configure system settings and animation defaults
 - Real-time serial communication with the Arduino
 
 Requirements:
@@ -287,6 +288,63 @@ async def main_page():
                         <button type="button" onclick="clearStrip()">Clear Strip</button>
                     </form>
 
+                    <h3>Animated Effects</h3>
+                    <form onsubmit="testRgbEffect(event); return false;">
+                        <div class="form-group">
+                            <label>Strip:</label>
+                            <select id="rgb_effect_strip">
+                                <option value="1">1 (Ring-Top)</option>
+                                <option value="2">2 (Door)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Effect:</label>
+                            <select id="rgb_effect_mode">
+                                <option value="running">Running</option>
+                                <option value="charging">Charging</option>
+                                <option value="center_fill">Center Fill</option>
+                                <option value="rainbow">Rainbow</option>
+                                <option value="flash">Flash</option>
+                                <option value="random">Random</option>
+                                <option value="breathing">Breathing</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <div class="inline">
+                                <label>R:</label>
+                                <input type="number" id="rgb_effect_r" min="0" max="255" value="255" class="color-input">
+                            </div>
+                            <div class="inline">
+                                <label>G:</label>
+                                <input type="number" id="rgb_effect_g" min="0" max="255" value="120" class="color-input">
+                            </div>
+                            <div class="inline">
+                                <label>B:</label>
+                                <input type="number" id="rgb_effect_b" min="0" max="255" value="40" class="color-input">
+                            </div>
+                            <div class="inline">
+                                <label>Bright:</label>
+                                <input type="number" id="rgb_effect_brightness" min="0" max="255" value="180" class="color-input">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="inline">
+                                <label>Time ms:</label>
+                                <input type="number" id="rgb_effect_time" min="1" max="10000" value="40" class="color-input">
+                            </div>
+                            <div class="inline">
+                                <label>Repeat:</label>
+                                <input type="number" id="rgb_effect_repeat" min="0" max="10000" value="0" class="color-input">
+                            </div>
+                            <div class="inline">
+                                <label>Count:</label>
+                                <input type="number" id="rgb_effect_count" min="1" max="1000" value="12" class="color-input">
+                            </div>
+                        </div>
+                        <button type="submit">Start Effect</button>
+                        <button type="button" onclick="stopRgbEffect()">Stop / Default</button>
+                    </form>
+
                     <div id="rgb_response" class="response"></div>
                 </div>
 
@@ -422,6 +480,94 @@ async def main_page():
                     <button type="submit">Set LED Default</button>
                 </form>
 
+                <h3>Startup Behavior</h3>
+                <form onsubmit="setStartupBehavior(event); return false;">
+                    <div class="form-group">
+                        <label>Strip:</label>
+                        <select id="startup_strip">
+                            <option value="1">1 (Ring-Top)</option>
+                            <option value="2">2 (Door)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Boot Mode:</label>
+                        <select id="startup_mode">
+                            <option value="solid">Solid color</option>
+                            <option value="effect">Effect</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Boot Effect:</label>
+                        <select id="startup_effect">
+                            <option value="running">Running</option>
+                            <option value="charging">Charging</option>
+                            <option value="center_fill">Center fill</option>
+                            <option value="rainbow">Rainbow</option>
+                            <option value="flash">Flash</option>
+                            <option value="random">Random</option>
+                            <option value="breathing">Breathing</option>
+                        </select>
+                    </div>
+                    <button type="submit">Save Startup Behavior</button>
+                </form>
+
+                <h3>RGB Effect Defaults</h3>
+                <form onsubmit="setRgbEffectDefault(event); return false;">
+                    <div class="form-group">
+                        <label>Strip:</label>
+                        <select id="effect_default_strip">
+                            <option value="1">1 (Ring-Top)</option>
+                            <option value="2">2 (Door)</option>
+                            <option value="0">Both strips</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Effect:</label>
+                        <select id="effect_default_mode">
+                            <option value="running">Running default</option>
+                            <option value="charging">Charging default</option>
+                            <option value="center_fill">Center fill default</option>
+                            <option value="rainbow">Rainbow default</option>
+                            <option value="flash">Flash default</option>
+                            <option value="random">Random default</option>
+                            <option value="breathing">Breathing default</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <div class="inline">
+                            <label>R:</label>
+                            <input type="number" id="effect_default_r" min="0" max="255" value="255" class="color-input">
+                        </div>
+                        <div class="inline">
+                            <label>G:</label>
+                            <input type="number" id="effect_default_g" min="0" max="255" value="120" class="color-input">
+                        </div>
+                        <div class="inline">
+                            <label>B:</label>
+                            <input type="number" id="effect_default_b" min="0" max="255" value="40" class="color-input">
+                        </div>
+                        <div class="inline">
+                            <label>Bright:</label>
+                            <input type="number" id="effect_default_brightness" min="0" max="255" value="180" class="color-input">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="inline">
+                            <label>Time ms:</label>
+                            <input type="number" id="effect_default_time" min="1" max="10000" value="40" class="color-input">
+                        </div>
+                        <div class="inline">
+                            <label>Repeat:</label>
+                            <input type="number" id="effect_default_repeat" min="0" max="10000" value="0" class="color-input">
+                        </div>
+                        <div class="inline">
+                            <label>Count:</label>
+                            <input type="number" id="effect_default_count" min="1" max="1000" value="12" class="color-input">
+                        </div>
+                    </div>
+                    <button type="submit">Save Effect Default</button>
+                </form>
+
                 <div id="config_response" class="response"></div>
             </div>
 
@@ -429,6 +575,7 @@ async def main_page():
             <div class="section help-section">
                 <h2>📖 API Documentation</h2>
                 <button onclick="showHelp()">Get Help from Arduino</button>
+                <button onclick="getStatus()" style="background:#27ae60">Get Device Status</button>
                 <pre id="help_content"></pre>
             </div>
         </div>
@@ -505,6 +652,44 @@ async def main_page():
                 const response = await callAPI('/test/rgb', data);
                 displayResponse('rgb_response', response);
                 return false;
+            }
+
+            async function testRgbEffect(event) {
+                event.preventDefault();
+                const strip = parseInt(document.getElementById('rgb_effect_strip').value);
+                const mode = document.getElementById('rgb_effect_mode').value;
+                const data = {
+                    action: 'rgb',
+                    strip: strip,
+                    mode: mode,
+                    r: parseInt(document.getElementById('rgb_effect_r').value),
+                    g: parseInt(document.getElementById('rgb_effect_g').value),
+                    b: parseInt(document.getElementById('rgb_effect_b').value),
+                    brightness: parseInt(document.getElementById('rgb_effect_brightness').value),
+                    time: parseInt(document.getElementById('rgb_effect_time').value),
+                    repeatingtime: parseInt(document.getElementById('rgb_effect_repeat').value),
+                    count: parseInt(document.getElementById('rgb_effect_count').value)
+                };
+
+                if (mode === 'rainbow') {
+                    delete data.r;
+                    delete data.g;
+                    delete data.b;
+                }
+
+                const response = await callAPI('/test/rgb', data);
+                displayResponse('rgb_response', response);
+                return false;
+            }
+
+            async function stopRgbEffect() {
+                const data = {
+                    action: 'rgb',
+                    strip: parseInt(document.getElementById('rgb_effect_strip').value),
+                    mode: 'default'
+                };
+                const response = await callAPI('/test/rgb', data);
+                displayResponse('rgb_response', response);
             }
 
             async function clearStrip() {
@@ -614,9 +799,79 @@ async def main_page():
                 return false;
             }
 
+            async function setRgbEffectDefault(event) {
+                event.preventDefault();
+                const strip = parseInt(document.getElementById('effect_default_strip').value);
+                const mode = document.getElementById('effect_default_mode').value;
+                const settingMap = {
+                    running: 'running_default',
+                    charging: 'charging_default',
+                    center_fill: 'center_default',
+                    rainbow: 'rainbow_default',
+                    flash: 'flash_default',
+                    random: 'random_default',
+                    breathing: 'breathing_default'
+                };
+                const data = {
+                    action: 'config',
+                    setting: settingMap[mode],
+                    strip: strip,
+                    r: parseInt(document.getElementById('effect_default_r').value),
+                    g: parseInt(document.getElementById('effect_default_g').value),
+                    b: parseInt(document.getElementById('effect_default_b').value),
+                    brightness: parseInt(document.getElementById('effect_default_brightness').value),
+                    time: parseInt(document.getElementById('effect_default_time').value),
+                    repeatingtime: parseInt(document.getElementById('effect_default_repeat').value),
+                    count: parseInt(document.getElementById('effect_default_count').value)
+                };
+
+                if (mode === 'rainbow') {
+                    delete data.r;
+                    delete data.g;
+                    delete data.b;
+                }
+
+                const response = await callAPI('/test/config', data);
+                displayResponse('config_response', response);
+                return false;
+            }
+
+            async function setStartupBehavior(event) {
+                event.preventDefault();
+                const strip = parseInt(document.getElementById('startup_strip').value);
+                const mode = document.getElementById('startup_mode').value;
+                const effect = document.getElementById('startup_effect').value;
+
+                const modeResponse = await callAPI('/test/config', {
+                    action: 'config',
+                    setting: 'startup_mode',
+                    strip: strip,
+                    value: mode
+                });
+
+                if (mode === 'effect') {
+                    const effectResponse = await callAPI('/test/config', {
+                        action: 'config',
+                        setting: 'startup_effect',
+                        strip: strip,
+                        value: effect
+                    });
+                    displayResponse('config_response', effectResponse);
+                } else {
+                    displayResponse('config_response', modeResponse);
+                }
+
+                return false;
+            }
+
             async function showHelp() {
                 const response = await callAPI('/help');
                 document.getElementById('help_content').textContent = response.help || response.message;
+            }
+
+            async function getStatus() {
+                const response = await callAPI('/test/status', {});
+                document.getElementById('help_content').textContent = JSON.stringify(response, null, 2);
             }
         </script>
     </body>
@@ -661,6 +916,13 @@ async def test_config(command: dict):
     """Test configuration commands"""
     command_str = json.dumps(command)
     response = send_command(command_str)
+    return response
+
+@app.post("/test/status")
+async def test_status(request: Request):
+    """Get device status and current configuration"""
+    data_cmd = {"action": "status"}
+    response = send_command(json.dumps(data_cmd))
     return response
 
 @app.post("/test/config/pixels")
@@ -759,10 +1021,11 @@ async def get_info():
         "arduino_port": arduino.port if arduino else "Not connected",
         "features": [
             "RGB Strip Control (single pixel, range, all pixels, clear)",
+            "RGB Animations (running, charging, center fill, rainbow, flash, random)",
             "Single LED Control (digital/analog)",
             "Relay Control (2 relays)",
             "Sensor Reading (LB analog/digital, RS digital, LM75 temperature)",
-            "Configuration (threshold, pixel counts, default colors, brightness)",
+            "Configuration (threshold, pixel counts, default colors, brightness, animation defaults)",
             "Complete API testing"
         ]
     }
@@ -777,7 +1040,7 @@ if __name__ == "__main__":
         print(f"📡 Arduino Port: {arduino.port}")
     else:
         print("📡 Arduino not connected")
-    print(f"🌐 Web Interface: http://localhost:8000")
-    print("📖 API Documentation: http://localhost:8000/docs")
+    print(f"🌐 Web Interface: http://localhost:8090")
+    print("📖 API Documentation: http://localhost:8090/docs")
     
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8090)

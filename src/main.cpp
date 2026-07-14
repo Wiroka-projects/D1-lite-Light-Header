@@ -1,5 +1,5 @@
 /*
- * LED Controller API v1.0
+ * LED Controller API v1.1.0
  * 
  * 
  * This program provides a comprehensive JSON-based API for controlling:
@@ -42,6 +42,7 @@ const int EEPROM_STARTUP_MODE_RGB1 = 157;   // 1 byte: startup mode for strip 1 
 const int EEPROM_STARTUP_EFFECT_RGB1 = 158;  // 1 byte: startup effect for strip 1
 const int EEPROM_STARTUP_MODE_RGB2 = 159;    // 1 byte: startup mode for strip 2 (solid/effect)
 const int EEPROM_STARTUP_EFFECT_RGB2 = 160;   // 1 byte: startup effect for strip 2
+const int EEPROM_AUTO_RESET_12H = 161;        // 1 byte: auto reset toggle (0/1)
 
 const uint16_t EEPROM_MAGIC_VALUE = 0xABCD; // Magic number to verify EEPROM data
 
@@ -70,6 +71,9 @@ int defaultB2 = 40;    // Default blue for strip 2
 int brightnessRgb1 = 131; // Brightness for strip 1 (0-255)
 int brightnessRgb2 = 131; // Brightness for strip 2 (0-255)
 int ledDefaultBrightness = 110; // Default LED brightness (0-255, 0=off)
+bool autoReset12hEnabled = true; // Auto reset toggle for a 12-hour cycle
+uint32_t autoReset12hStartMs = 0;  // Start time for the current 12-hour cycle
+const uint32_t AUTO_RESET_12H_MS = 12UL * 60UL * 60UL * 1000UL;
 
 enum StartupMode : uint8_t {
   STARTUP_SOLID = 0,
@@ -184,6 +188,8 @@ void saveEepromSettings();
 void initRgbEffectDefaults();
 void loadRgbEffectDefaults(bool& needsSave);
 void saveRgbEffectDefaults();
+void applyControllerDefaultState();
+void updateAutoResetTimer();
 void updateRgbAnimations();
 void applyStartupState(int strip);
 bool startRgbEffectInternal(int strip, RgbEffectMode mode, int startIndex, int endIndex, int red, int green, int blue, int brightness, int intervalMs, int repeats, int count, bool announce);
@@ -853,12 +859,33 @@ void handleConfigCommand(JsonDocument& doc) {
     startupEffect[strip - 1] = effect;
     saveEepromSettings();
     sendSuccess("Startup effect for strip " + String(strip) + " set to " + String(rgbEffectName(effect)));
+
+  } else if (setting == "auto_reset_12h") {
+    String value = doc["value"] | "";
+    value.toLowerCase();
+
+    bool enable;
+    if (doc["value"].is<bool>()) {
+      enable = doc["value"].as<bool>();
+    } else if (value == "activate" || value == "active" || value == "on" || value == "true" || value == "enable" || value == "enabled") {
+      enable = true;
+    } else if (value == "deactivate" || value == "inactive" || value == "off" || value == "false" || value == "disable" || value == "disabled") {
+      enable = false;
+    } else {
+      sendError("Invalid auto reset value. Use: activate, deactivate, on, off, true, false");
+      return;
+    }
+
+    autoReset12hEnabled = enable;
+    autoReset12hStartMs = millis();
+    saveEepromSettings();
+    sendSuccess(String("12h auto reset ") + (autoReset12hEnabled ? "activated" : "deactivated"));
     
   } else {
     // ================================
     // INVALID CONFIGURATION SETTING
     // ================================
-    sendError("Invalid setting. Available: lb_threshold, rgb1_pixels, rgb2_pixels, rgb1_default_color, rgb2_default_color, rgb1_brightness, rgb2_brightness, brightness, led_default, running_default, charging_default, center_default, rainbow_default, flash_default, random_default, breathing_default, startup_mode, startup_effect");
+    sendError("Invalid setting. Available: lb_threshold, rgb1_pixels, rgb2_pixels, rgb1_default_color, rgb2_default_color, rgb1_brightness, rgb2_brightness, brightness, led_default, running_default, charging_default, center_default, rainbow_default, flash_default, random_default, breathing_default, startup_mode, startup_effect, auto_reset_12h");
   }
 }
 
@@ -898,6 +925,10 @@ void handleStatusCommand() {
   response["startup_mode_rgb2"] = startupModeName(startupMode[1]);
   response["startup_effect_rgb1"] = rgbEffectName(startupEffect[0]);
   response["startup_effect_rgb2"] = rgbEffectName(startupEffect[1]);
+  response["version"] = "1.1.0";
+  response["auto_reset_12h_enabled"] = autoReset12hEnabled;
+  uint32_t autoResetElapsed = (uint32_t)(millis() - autoReset12hStartMs);
+  response["auto_reset_12h_remaining_ms"] = autoReset12hEnabled ? (autoResetElapsed >= AUTO_RESET_12H_MS ? 0 : (AUTO_RESET_12H_MS - autoResetElapsed)) : 0;
   serializeJson(response, Serial);
   Serial.println();
 }
@@ -931,7 +962,7 @@ void sendError(String message) {
  */
 void showHelp() {
   Serial.println();
-  Serial.println("=== LED Controller API Documentation ===");
+  Serial.println("=== LED Controller API v1.1.0 Documentation ===");
   Serial.println();
   Serial.println("All commands use JSON format. Examples:");
   Serial.println();
@@ -1001,6 +1032,8 @@ void showHelp() {
   Serial.println("   Breathing default: {\"action\":\"config\",\"setting\":\"breathing_default\",\"strip\":1,\"r\":255,\"g\":120,\"b\":40,\"brightness\":180,\"time\":25,\"repeatingtime\":0}");
   Serial.println("   Startup mode:      {\"action\":\"config\",\"setting\":\"startup_mode\",\"strip\":1,\"value\":\"effect\"}");
   Serial.println("   Startup effect:    {\"action\":\"config\",\"setting\":\"startup_effect\",\"strip\":1,\"value\":\"rainbow\"}");
+  Serial.println("   12h auto reset:    {\"action\":\"config\",\"setting\":\"auto_reset_12h\",\"value\":\"activate\"}");
+  Serial.println("                      {\"action\":\"config\",\"setting\":\"auto_reset_12h\",\"value\":\"deactivate\"}");
   Serial.println();
   
   // ================================
@@ -1024,6 +1057,7 @@ void showHelp() {
   Serial.println("- effect defaults: running_default, charging_default, center_default, rainbow_default, flash_default, random_default, breathing_default");
   Serial.println("- startup_mode: solid or effect (per strip)");
   Serial.println("- startup_effect: running, charging, center_fill, rainbow, flash, random, breathing (per strip)");
+  Serial.println("- auto_reset_12h: activate or deactivate a periodic 12-hour controller reset");
   Serial.println();
   
   // ================================
@@ -1056,14 +1090,16 @@ void setup()
   // ================================
   Serial.begin(115200);  // Start serial communication at 115200 baud rate
   Serial.println();      // Print empty line for clarity
-  Serial.println("=== LED Controller API v1.0 ===");
+  Serial.println("=== LED Controller API v1.1.0 ===");
   Serial.println("Type 'help' for available commands");
   Serial.println("Config: RGB1=" + String(numLedsRgb1) + "px, RGB2=" + String(numLedsRgb2) + "px");
   Serial.println("Colors: RGB1=(" + String(defaultR1) + "," + String(defaultG1) + "," + String(defaultB1) + ") RGB2=(" + String(defaultR2) + "," + String(defaultG2) + "," + String(defaultB2) + ")");
   Serial.println("Brightness defaults: RGB1=" + String(brightnessRgb1) + " RGB2=" + String(brightnessRgb2) + " LED=" + String(ledDefaultBrightness));
   Serial.println("Startup: strip1=" + String(startupModeName(startupMode[0])) + "/" + String(rgbEffectName(startupEffect[0])) + " strip2=" + String(startupModeName(startupMode[1])) + "/" + String(rgbEffectName(startupEffect[1])));
+  Serial.println("Auto reset: " + String(autoReset12hEnabled ? "enabled" : "disabled") + " (12h)");
   Serial.println("Animations: running, charging, center_fill, rainbow, flash, random, breathing");
   Serial.println("Ready for JSON commands...");
+  autoReset12hStartMs = millis();
   
   // ================================
   // PIN INITIALIZATION
@@ -1172,6 +1208,7 @@ void loop()
     delay(10);
   }
 
+  updateAutoResetTimer();
   updateRgbAnimations();
   yield();
 }
@@ -1208,6 +1245,8 @@ void loadEepromSettings() {
   startupEffect[0] = (RgbEffectMode)EEPROM.read(EEPROM_STARTUP_EFFECT_RGB1);
   startupMode[1] = EEPROM.read(EEPROM_STARTUP_MODE_RGB2);
   startupEffect[1] = (RgbEffectMode)EEPROM.read(EEPROM_STARTUP_EFFECT_RGB2);
+  uint8_t autoResetValue = EEPROM.read(EEPROM_AUTO_RESET_12H);
+  autoReset12hEnabled = (autoResetValue == 1);
   
   // Validate loaded values
   if (numLedsRgb1 < 1 || numLedsRgb1 > 1000) numLedsRgb1 = 300;
@@ -1264,6 +1303,7 @@ void saveEepromSettings() {
   EEPROM.write(EEPROM_STARTUP_EFFECT_RGB1, (uint8_t)startupEffect[0]);
   EEPROM.write(EEPROM_STARTUP_MODE_RGB2, startupMode[1]);
   EEPROM.write(EEPROM_STARTUP_EFFECT_RGB2, (uint8_t)startupEffect[1]);
+  EEPROM.write(EEPROM_AUTO_RESET_12H, autoReset12hEnabled ? 1 : 0);
   saveRgbEffectDefaults();
   
   EEPROM.commit(); // Save changes
@@ -1654,6 +1694,32 @@ void applyStripDefault(int strip) {
     currentStrip->setPixelColor(i, color);
   }
   showStrip(currentStrip);
+}
+
+void applyControllerDefaultState() {
+  stopRgbEffect(1, false);
+  stopRgbEffect(2, false);
+  digitalWrite(relay1, HIGH);
+  digitalWrite(relay2, HIGH);
+  analogWrite(ledPin, ledDefaultBrightness);
+  lastPwmValue = ledDefaultBrightness;
+  pwmActive = (ledDefaultBrightness > 0);
+  applyStartupState(1);
+  applyStartupState(2);
+}
+
+void updateAutoResetTimer() {
+  if (!autoReset12hEnabled) {
+    return;
+  }
+
+  uint32_t now = millis();
+  if ((uint32_t)(now - autoReset12hStartMs) < AUTO_RESET_12H_MS) {
+    return;
+  }
+
+  autoReset12hStartMs = now;
+  applyControllerDefaultState();
 }
 
 void stopRgbEffect(int strip, bool restoreDefault) {

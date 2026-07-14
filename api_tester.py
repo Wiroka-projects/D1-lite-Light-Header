@@ -511,6 +511,12 @@ async def main_page():
                     <button type="submit">Save Startup Behavior</button>
                 </form>
 
+                <h3>12h Auto Reset</h3>
+                <div class="form-group">
+                    <button type="button" onclick="setAutoReset12h(true)">Activate 12h Auto Reset</button>
+                    <button type="button" onclick="setAutoReset12h(false)">Deactivate 12h Auto Reset</button>
+                </div>
+
                 <h3>RGB Effect Defaults</h3>
                 <form onsubmit="setRgbEffectDefault(event); return false;">
                     <div class="form-group">
@@ -862,6 +868,15 @@ async def main_page():
                 }
 
                 return false;
+            }
+
+            async function setAutoReset12h(enabled) {
+                const response = await callAPI('/test/config', {
+                    action: 'config',
+                    setting: 'auto_reset_12h',
+                    value: enabled ? 'activate' : 'deactivate'
+                });
+                displayResponse('config_response', response);
             }
 
             async function showHelp() {

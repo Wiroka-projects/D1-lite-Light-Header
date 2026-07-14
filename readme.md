@@ -195,6 +195,15 @@ Die Firmware versteht JSON-Kommandos über die serielle Schnittstelle. Die wicht
 
 Geben Sie im seriellen Monitor `help` ein, um die Help-Ausgabe direkt vom Controller zu erhalten.
 
+### 12-Stunden Auto-Reset
+
+Der 12-Stunden-Auto-Reset kann per Serial aktiviert oder deaktiviert werden. Wenn er aktiv ist, setzt der Controller nach 12 Stunden wieder auf die konfigurierten Standardzustände zurück.
+
+```json
+{"action":"config","setting":"auto_reset_12h","value":"activate"}
+{"action":"config","setting":"auto_reset_12h","value":"deactivate"}
+```
+
 ### RGB-Strip-Steuerung
 
 ```json
@@ -255,6 +264,7 @@ Geben Sie im seriellen Monitor `help` ein, um die Help-Ausgabe direkt vom Contro
 {"action":"config","setting":"breathing_default","strip":1,"r":255,"g":120,"b":40,"brightness":180,"time":25,"repeatingtime":0}
 {"action":"config","setting":"startup_mode","strip":1,"value":"effect"}
 {"action":"config","setting":"startup_effect","strip":1,"value":"rainbow"}
+{"action":"config","setting":"auto_reset_12h","value":"activate"}
 ```
 
 ### Status-Abfrage
@@ -283,6 +293,7 @@ Geben Sie im seriellen Monitor `help` ein, um die Help-Ausgabe direkt vom Contro
 - `led_default`: Standardwert für die einzelne LED beim Start.
 - `startup_mode`: `solid` oder `effect`.
 - `startup_effect`: `running`, `charging`, `center_fill`, `rainbow`, `flash`, `random` oder `breathing`.
+- `auto_reset_12h`: `activate` oder `deactivate` für den 12-Stunden-Reset.
 
 ---
 

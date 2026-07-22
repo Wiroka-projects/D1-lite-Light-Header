@@ -1,7 +1,6 @@
 /*
  * LED Controller API v1.1.0
  * 
- * 
  * This program provides a comprehensive JSON-based API for controlling:
  * - Two RGB LED strips (NeoPixel) with individual pixel control
  * - Single LED with digital/analog control
@@ -1109,6 +1108,7 @@ void setup()
   pinMode(relay1, OUTPUT);  // Relay 1 pin as output
   pinMode(relay2, OUTPUT);  // Relay 2 pin as output
   analogWriteRange(255);    // Match the program's 0-255 LED brightness API
+  analogWriteFreq(200);     // Lower PWM frequency to reduce visible flicker during NeoPixel updates
   randomSeed(micros());     // Seed random sparkle effects
   
   // Set pin modes for inputs (sensors)
@@ -1379,9 +1379,7 @@ uint32_t makeScaledColor(Adafruit_NeoPixel* strip, int r, int g, int b, int brig
 }
 
 void showStrip(Adafruit_NeoPixel* strip) {
-  pausePwmForNeoPixel();
   strip->show();
-  resumePwm();
 }
 
 const char* rgbEffectName(RgbEffectMode mode) {
